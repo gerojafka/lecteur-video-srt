@@ -1,0 +1,9 @@
+# Fichiers vidéo / sous-titres posés à la racine par erreur ;
+# ceux de media-library/ sont publiés avec le site.
+/*.mp4
+/*.mov
+/*.m4v
+/*.mkv
+/*.webm
+/*.srt
+/*.vtt

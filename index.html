@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lecteur vidéo SRT</title>
+<meta name="description" content="Lecteur vidéo + sous-titres SRT pour s'entraîner à répéter des phrases.">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lecteur SRT">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-512.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root{
+    --bg:#0f1115; --panel:#181b22; --panel2:#20242d; --line:#2c313c;
+    --text:#e8eaf0; --muted:#9aa1ad; --accent:#4f8cff; --accent-soft:rgba(79,140,255,.18);
+    --a:#3ecf8e; --b:#ff8a4c; --region:rgba(255,181,71,.22); --cue:#5b6372; --warn:#ffcf7a;
+    --tap:40px;
+  }
+  @media (pointer:coarse){ :root{ --tap:46px } }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+  button,select,input{font:inherit;color:inherit}
+  button,label,select,.track{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .sr{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+  svg.i{width:20px;height:20px;fill:currentColor;flex:none}
+
+  .app{max-width:1600px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;
+    padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right))
+            max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+  .main{display:flex;flex-direction:column;gap:12px;min-width:0}
+
+  /* Barre du haut */
+  .topbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .topbar h1{font-size:17px;margin:0 6px 0 0;font-weight:650;white-space:nowrap}
+  .topbar .spacer{flex:1}
+  .status{font-size:13px;color:var(--muted);min-width:0;flex:1 1 160px;display:flex;flex-direction:column;gap:1px}
+  .status span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .status .warn{color:var(--warn);white-space:normal}
+  .status .title{color:var(--text);font-size:15px;font-weight:600;white-space:normal;line-height:1.3}
+  /* Bouton « Sous-titres » qui clignote tant qu'aucun .srt n'est chargé */
+  .btn.blink{animation:blink 1s ease-in-out infinite}
+  @keyframes blink{50%{background:var(--accent);border-color:var(--accent);color:#fff}}
+  @media (prefers-reduced-motion:reduce){ .btn.blink{animation:none;background:var(--accent);border-color:var(--accent);color:#fff} }
+  #playlist,#library{max-width:min(420px,100%);min-height:var(--tap)}
+  #library{font-weight:600}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+
+  /* Boutons */
+  .btn{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:0 12px;
+    min-height:var(--tap);min-width:var(--tap);cursor:pointer;display:inline-flex;align-items:center;
+    justify-content:center;gap:6px;white-space:nowrap;user-select:none;-webkit-user-select:none}
+  @media (hover:hover){ .btn:hover:not(:disabled){border-color:var(--accent)} }
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;min-width:110px}
+  .btn.on{background:var(--accent-soft);border-color:var(--accent)}
+  .btn.icon{padding:0}
+  .btn .k{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+  .btn.primary .k{color:#dfe8ff;border-color:rgba(255,255,255,.4)}
+  .btn.ma{color:var(--a);font-weight:700} .btn.mb{color:var(--b);font-weight:700}
+  @media (hover:none), (pointer:coarse){ .k{display:none!important} }
+
+  /* Vidéo */
+  .stage{position:relative;background:#000;border-radius:12px;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;min-height:200px}
+  .stage video{display:block;width:100%;max-height:66vh;max-height:66dvh;background:#000}
+  .stage.empty video{display:none}
+  .empty-msg{display:none;color:var(--muted);text-align:center;padding:48px 20px;line-height:1.7}
+  .stage.empty .empty-msg{display:block}
+  .stage.drag{outline:2px dashed var(--accent);outline-offset:-8px}
+  .vbox{position:relative;width:100%}
+  .stage.empty .vbox{display:none}
+  .overlay-sub{position:absolute;left:3%;right:3%;bottom:4px;text-align:center;pointer-events:none;z-index:2}
+  /* Bandeau qui cache le texte anglais incrusté dans l'image */
+  .mask{position:absolute;left:0;right:0;pointer-events:none;z-index:1;
+    background:rgba(12,13,17,.88);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+  .overlay-sub span{display:inline;background:rgba(0,0,0,.75);color:#fff;
+    font-size:clamp(14px,2.3vw,28px);line-height:1.5;padding:2px 10px;border-radius:4px;
+    white-space:pre-line;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+  .countdown{position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    background:rgba(15,17,21,.92);border:1px solid var(--line);border-radius:10px;
+    padding:10px 14px;width:min(300px,90%);display:none;text-align:center;pointer-events:none}
+  .countdown.on{display:block}
+  .countdown .lbl{font-size:14px;margin-bottom:8px}
+  .countdown .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+  .countdown .bar i{display:block;height:100%;background:var(--accent);width:0}
+  .countdown .skip{margin-top:6px;font-size:12px;color:var(--muted)}
+
+  /* Barre de temps */
+  .timeline{padding:16px 14px 8px}
+  .track{position:relative;height:36px;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
+  @media (pointer:coarse){ .track{height:46px} }
+  .track .rail{position:absolute;left:0;right:0;top:50%;height:10px;margin-top:-7px;background:var(--panel2);border-radius:5px;overflow:hidden}
+  .track .buffered{position:absolute;left:0;top:0;bottom:0;background:#2f3542}
+  .track .played{position:absolute;left:0;top:0;bottom:0;background:var(--accent)}
+  .track .region{position:absolute;top:50%;height:24px;margin-top:-14px;background:var(--region);display:none;pointer-events:none;border-radius:3px}
+  .track .region.on{display:block}
+  .track .region.loop{background:rgba(255,181,71,.36)}
+  .track canvas{position:absolute;left:0;right:0;top:50%;margin-top:5px;width:100%;height:5px;pointer-events:none}
+  .track .playhead{position:absolute;top:50%;width:2px;height:24px;margin:-14px 0 0 -1px;background:#fff;pointer-events:none;box-shadow:0 0 4px rgba(0,0,0,.6)}
+  .marker{position:absolute;top:-6px;bottom:0;width:30px;margin-left:-15px;display:none;cursor:ew-resize;z-index:2}
+  .marker.on{display:block}
+  .marker::before{content:"";position:absolute;left:14px;top:12px;bottom:4px;width:2px;background:var(--c)}
+  .marker span{position:absolute;top:0;left:50%;transform:translateX(-50%);
+    background:var(--c);color:#111;font-size:11px;font-weight:700;border-radius:4px;padding:0 6px;line-height:15px}
+  .marker.a{--c:var(--a)} .marker.b{--c:var(--b)}
+  .marker.a span{left:auto;right:14px;transform:none;border-radius:4px 0 0 4px}
+  .marker.b span{left:16px;transform:none;border-radius:0 4px 4px 0}
+  .hover-tip{position:absolute;top:-20px;background:#000;color:#fff;font-size:12px;padding:1px 6px;
+    border-radius:4px;transform:translateX(-50%);pointer-events:none;display:none;white-space:nowrap;z-index:3}
+  .times{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums;margin-top:2px}
+
+  /* Contrôles */
+  .controls{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:0 14px 14px}
+  .grp{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .ab-info{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+  @media (max-width:700px){
+    .controls{justify-content:center;padding:0 10px 12px}
+    .grp{justify-content:center;gap:6px}
+    .controls .lbl{display:none}
+    .btn.primary{min-width:76px}
+    .ab-info{width:100%;text-align:center}
+    .topbar h1{display:none}
+    .status{order:10;flex-basis:100%}
+  }
+
+  .current{padding:14px 18px;min-height:80px;font-size:clamp(18px,2vw,24px);line-height:1.45;white-space:pre-line}
+  .current .ph{color:var(--muted);font-size:15px}
+
+  /* Panneau réglages (masqué par défaut) */
+  .drawer{display:none;flex-direction:column;gap:12px;min-width:0}
+  .app.open .drawer{display:flex}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .drawer-head h2{margin:0;font-size:16px}
+  .backdrop{display:none}
+  @media (min-width:1100px){
+    .app.open{grid-template-columns:minmax(0,1fr) 380px}
+    .drawer{position:sticky;top:12px;align-self:start;height:calc(100vh - 24px);height:calc(100dvh - 24px);overflow:auto}
+  }
+  @media (max-width:1099.98px){
+    .drawer{display:flex;position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);z-index:30;
+      background:var(--bg);border-left:1px solid var(--line);overflow:auto;-webkit-overflow-scrolling:touch;
+      padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) 12px;
+      transform:translateX(105%);visibility:hidden;transition:transform .25s ease,visibility 0s .25s}
+    .app.open .drawer{transform:none;visibility:visible;transition:transform .25s ease}
+    .app.open .backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:29}
+  }
+  .opts{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+  .opts h3,.tr-head h3{font-size:13px;margin:0;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:32px}
+  .row label,label.row{cursor:pointer}
+  .row .grow{flex:1}
+  input[type=range]{accent-color:var(--accent);flex:1;min-width:120px;min-height:28px}
+  input[type=checkbox]{accent-color:var(--accent);width:20px;height:20px;flex:none}
+  select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px 8px;min-height:34px}
+  .val{font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
+  .hint{color:var(--muted);font-size:12.5px}
+  .switch{display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+
+  .transcript{display:flex;flex-direction:column}
+  .tr-list li:not(.active):not(.tr-empty){display:none}
+  .tr-list:not(:has(li.active)):not(:has(.tr-empty))::before{content:"…";display:block;padding:7px 12px;color:var(--muted)}
+  .tr-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .tr-list{list-style:none;margin:0;padding:6px;overflow:auto;position:relative;flex:1;-webkit-overflow-scrolling:touch}
+  .tr-list li{display:grid;grid-template-columns:48px 1fr auto;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;align-items:start}
+  @media (hover:hover){ .tr-list li:hover{background:var(--panel2)} }
+  .tr-list li.active{background:var(--accent-soft)}
+  .tr-list li.inab .t{color:var(--warn)}
+  .tr-list .t{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;padding-top:2px}
+  .tr-list .x{white-space:pre-line}
+  .tr-list .mk{display:flex;gap:4px;opacity:0}
+  .tr-list li:hover .mk,.tr-list li.active .mk{opacity:1}
+  @media (hover:none){ .tr-list .mk{opacity:1} }
+  .tr-list .mk button{background:transparent;border:1px solid var(--line);border-radius:6px;
+    font-size:12px;font-weight:700;min-width:30px;min-height:28px;cursor:pointer}
+  .tr-list .mk .ma{color:var(--a)} .tr-list .mk .mb{color:var(--b)}
+  .tr-empty{color:var(--muted);padding:20px;text-align:center;display:block!important}
+  .keys{padding:12px 16px;color:var(--muted);font-size:12.5px;line-height:1.8}
+  .keys b{color:var(--text);font-weight:600;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11.5px}
+  @media (hover:none), (pointer:coarse){ .keys{display:none} }
+
+  /* iPhone à l'horizontale : on donne la priorité à la vidéo */
+  @media (orientation:landscape) and (max-height:500px){
+    .stage video{max-height:calc(100dvh - 120px)}
+    .topbar h1{display:none}
+    .current{min-height:0;padding:10px 14px;font-size:18px}
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></symbol>
+  <symbol id="i-start" viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M11 5v14L3 12zM21 5v14l-8-7z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M13 5v14l8-7zM3 5v14l8-7z"/></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><path d="m18 4 2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4z"/></symbol>
+  <symbol id="i-subs" viewBox="0 0 24 24"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM4 12h4v2H4zm10 6H4v-2h10zm6 0h-4v-2h4zm0-4H10v-2h10z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path d="M19.14 12.94a7.1 7.1 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.59-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54A.48.48 0 0 0 13.93 2h-3.84a.48.48 0 0 0-.47.41l-.36 2.54a7.3 7.3 0 0 0-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.47a.48.48 0 0 0 .12.61l2.03 1.58a7.1 7.1 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54a7 7 0 0 0 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <section class="main">
+    <div class="topbar">
+      <h1>Lecteur vidéo + sous-titres</h1>
+      <select id="library" hidden aria-label="Bibliothèque" title="Vidéos de la bibliothèque (vidéo + sous-titres)">
+        <option value="">📚 Bibliothèque…</option>
+      </select>
+      <label class="btn" title="Choisir la vidéo">
+        <svg class="i"><use href="#i-video"/></svg><span class="lbl">Vidéo</span>
+        <input class="sr" type="file" id="fVideo" accept="video/*,.mp4,.m4v,.mov,.webm,.mkv" multiple>
+      </label>
+      <label class="btn" id="lblSrt" title="Choisir le fichier de sous-titres (.srt)">
+        <svg class="i"><use href="#i-subs"/></svg><span class="lbl">Sous-titres</span>
+        <input class="sr" type="file" id="fSrt">
+      </label>
+      <select id="playlist" hidden aria-label="Vidéo"></select>
+      <div class="status" id="status"></div>
+      <span class="spacer"></span>
+      <button class="btn icon" id="bSettings" aria-label="Réglages" title="Réglages et transcription (S)">
+        <svg class="i"><use href="#i-gear"/></svg>
+      </button>
+    </div>
+
+    <div class="stage empty" id="stage">
+      <div class="vbox" id="vbox">
+        <video id="video" playsinline webkit-playsinline preload="auto"></video>
+        <div class="mask" id="mask" hidden></div>
+        <div class="overlay-sub" id="overlay"></div>
+      </div>
+      <div class="empty-msg" id="emptyMsg">
+        Choisissez la vidéo avec <b>Vidéo</b>, puis le fichier .srt avec <b>Sous-titres</b>.<br>
+        Sur ordinateur, vous pouvez aussi glisser les deux fichiers ici.
+      </div>
+      <div class="countdown" id="countdown">
+        <div class="lbl" id="cdLabel">Pause</div>
+        <div class="bar"><i id="cdBar"></i></div>
+        <div class="skip">▶ pour continuer tout de suite</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="timeline">
+        <div class="track" id="track">
+          <div class="rail"><div class="buffered" id="buffered"></div><div class="played" id="played"></div></div>
+          <canvas id="cueCanvas"></canvas>
+          <div class="region" id="region"></div>
+          <div class="playhead" id="playhead"></div>
+          <div class="marker a" id="mA" data-m="A" title="Début de séquence (glisser pour déplacer)"><span>A</span></div>
+          <div class="marker b" id="mB" data-m="B" title="Fin de séquence (glisser pour déplacer)"><span>B</span></div>
+          <div class="hover-tip" id="tip"></div>
+        </div>
+        <div class="times"><span id="tCur">0:00.0</span><span id="tDur">0:00.0</span></div>
+      </div>
+      <div class="controls">
+        <div class="grp">
+          <button class="btn" id="bStart" title="Retour au début (ou au marqueur A si la boucle est active)"><svg class="i"><use href="#i-start"/></svg><span class="lbl">Début</span></button>
+          <button class="btn" id="bPrev" title="Phrase précédente (←)"><svg class="i"><use href="#i-prev"/></svg></button>
+          <button class="btn primary" id="bPlay"><svg class="i"><use id="playIcon" href="#i-play"/></svg><span class="lbl" id="playLbl">Lecture</span><span class="k">Espace</span></button>
+          <button class="btn" id="bNext" title="Phrase suivante (→)"><svg class="i"><use href="#i-next"/></svg></button>
+          <button class="btn" id="bReplay" title="Rejouer la phrase (R)"><svg class="i"><use href="#i-replay"/></svg><span class="lbl">Phrase</span></button>
+        </div>
+        <div class="grp">
+          <button class="btn ma" id="bA" title="Placer le marqueur de début ici ([)">[ A</button>
+          <button class="btn mb" id="bB" title="Placer le marqueur de fin ici (])">B ]</button>
+          <button class="btn" id="bLoop" title="Répéter la séquence A → B en boucle (L)"><svg class="i"><use href="#i-loop"/></svg><span class="lbl">Boucle A-B</span></button>
+          <button class="btn" id="bClear" title="Effacer les marqueurs"><svg class="i"><use href="#i-close"/></svg></button>
+        </div>
+        <span class="ab-info" id="abInfo"></span>
+      </div>
+    </div>
+
+    <div class="panel current" id="current"><span class="ph">Le texte du sous-titre s'affiche ici.</span></div>
+  </section>
+
+  <div class="backdrop" id="backdrop"></div>
+  <aside class="drawer" id="drawer" aria-label="Réglages">
+    <div class="drawer-head">
+      <h2>Réglages</h2>
+      <button class="btn icon" id="bClose" aria-label="Fermer"><svg class="i"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="panel opts">
+      <h3>Répétition des phrases</h3>
+      <label class="switch"><input type="checkbox" id="oPhrase"> Pause après chaque phrase</label>
+      <div class="row">
+        <span>Délai</span>
+        <input type="range" id="oDelay" min="1" max="5" step="0.5" value="3">
+        <span class="val" id="vDelay">3 s</span>
+      </div>
+      <div class="row">
+        <span class="grow">Répéter chaque phrase</span>
+        <select id="oReps">
+          <option value="0">0 fois (pause seule)</option>
+          <option value="1">1 fois</option>
+          <option value="2">2 fois</option>
+          <option value="3">3 fois</option>
+          <option value="4">4 fois</option>
+          <option value="5">5 fois</option>
+          <option value="inf" selected>en boucle</option>
+        </select>
+      </div>
+      <div class="hint">À la fin de chaque sous-titre, la vidéo se met en pause pendant le délai choisi (le temps de répéter à voix haute), puis rejoue la phrase ou passe à la suivante.</div>
+
+      <h3 style="margin-top:6px">Séquence A-B</h3>
+      <label class="row"><input type="checkbox" id="oAbPause" checked> Pause (délai) avant de reboucler</label>
+      <label class="row"><input type="checkbox" id="oSnap" checked> Caler A / B sur le début / la fin des phrases</label>
+
+      <h3 style="margin-top:6px">Affichage</h3>
+      <label class="row"><input type="checkbox" id="oOverlay" checked> Sous-titres sur la vidéo</label>
+      <label class="row"><input type="checkbox" id="oMask"> Masquer le texte anglais incrusté</label>
+      <div id="maskRows">
+        <div class="row"><span>Haut du bandeau</span><input type="range" id="oMaskTop" min="40" max="98" step="1" value="68"><span class="val" id="vMaskTop">68 %</span></div>
+        <div class="row"><span>Bas du bandeau</span><input type="range" id="oMaskBot" min="45" max="100" step="1" value="93"><span class="val" id="vMaskBot">93 %</span></div>
+        <div class="hint">Le texte anglais fait partie de l'image : il est caché par un bandeau sombre. Réglez le haut et le bas du bandeau (en % de la hauteur de la vidéo).</div>
+      </div>
+      <div class="row">
+        <span class="grow">Vitesse</span>
+        <select id="oRate">
+          <option value="0.5">0,5×</option><option value="0.6">0,6×</option><option value="0.75">0,75×</option>
+          <option value="0.9">0,9×</option><option value="1" selected>1×</option><option value="1.25">1,25×</option>
+        </select>
+      </div>
+      <div class="row" id="volRow">
+        <span>Volume</span><input type="range" id="oVol" min="0" max="1" step="0.05" value="1">
+      </div>
+    </div>
+
+    <div class="panel transcript">
+      <div class="tr-head"><h3>Transcription</h3><span class="hint" id="cueCount"></span></div>
+      <ul class="tr-list" id="trList"><li class="tr-empty">Aucun sous-titre chargé.</li></ul>
+    </div>
+
+    <div class="panel keys">
+      <b>Espace</b> lecture/pause · <b>Début</b> retour au début · <b>←</b>/<b>→</b> phrase préc./suiv. ·
+      <b>R</b> rejouer la phrase · <b>[</b> / <b>]</b> placer A / B · <b>L</b> boucle A-B · <b>P</b> pause après chaque phrase ·
+      <b>1</b>…<b>5</b> délai · <b>S</b> réglages · clic sur une ligne = lire cette phrase
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const app = $('app'), video = $('video'), stage = $('stage'), track = $('track');
+  const isIOS = /iP(hone|ad|od)/.test(navigator.platform) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  let cues = [];
+  const lib = { videos: [], subs: [], current: -1 };
+  const st = {
+    A: null, B: null, loop: false,
+    phrase: false, delay: 3, reps: Infinity, abPause: true, snap: true,
+    tracked: -1, done: -1, playCount: 0,
+    waiting: false, timer: null, waitStart: 0, waitMs: 0, pending: null, waitCue: -1,
+  };
+
+  /* ---------- Préférences ---------- */
+  const PREF = 'lecteur-srt-prefs';
+  function savePrefs(){
+    try{ localStorage.setItem(PREF, JSON.stringify({phrase:st.phrase, delay:st.delay, reps:$('oReps').value,
+      abPause:st.abPause, snap:st.snap, overlay:$('oOverlay').checked, mask:$('oMask').checked, maskTop:$('oMaskTop').value, maskBot:$('oMaskBot').value, rate:$('oRate').value, vol:$('oVol').value})); }catch(e){}
+  }
+  function loadPrefs(){
+    let p = null; try{ p = JSON.parse(localStorage.getItem(PREF)); }catch(e){}
+    if(!p) return;
+    if('phrase' in p) $('oPhrase').checked = !!p.phrase;
+    if(p.delay) $('oDelay').value = p.delay;
+    if(p.reps != null) $('oReps').value = p.reps;
+    if('abPause' in p) $('oAbPause').checked = !!p.abPause;
+    if('snap' in p) $('oSnap').checked = !!p.snap;
+    if('overlay' in p) $('oOverlay').checked = !!p.overlay;
+    if('mask' in p) $('oMask').checked = !!p.mask;
+    if(p.maskTop) $('oMaskTop').value = p.maskTop;
+    if(p.maskBot) $('oMaskBot').value = p.maskBot;
+    if(p.rate) $('oRate').value = p.rate;
+    if(p.vol != null) $('oVol').value = p.vol;
+  }
+  function readOpts(){
+    st.phrase = $('oPhrase').checked;
+    st.delay = +$('oDelay').value;
+    $('vDelay').textContent = String(st.delay).replace('.', ',') + ' s';
+    const r = $('oReps').value; st.reps = r === 'inf' ? Infinity : +r;
+    st.abPause = $('oAbPause').checked;
+    st.snap = $('oSnap').checked;
+    $('overlay').style.display = $('oOverlay').checked ? '' : 'none';
+    // bandeau anglais
+    let top = +$('oMaskTop').value, bot = +$('oMaskBot').value;
+    if(bot < top + 3){ bot = Math.min(100, top + 3); $('oMaskBot').value = bot; }
+    $('vMaskTop').textContent = top + ' %'; $('vMaskBot').textContent = bot + ' %';
+    const m = $('mask');
+    m.hidden = !$('oMask').checked;
+    m.style.top = top + '%'; m.style.height = (bot - top) + '%';
+    $('maskRows').hidden = !$('oMask').checked;
+    video.playbackRate = +$('oRate').value;
+    if(!isIOS) video.volume = +$('oVol').value;
+    savePrefs();
+  }
+  ['oPhrase','oDelay','oReps','oAbPause','oSnap','oOverlay','oMask','oMaskTop','oMaskBot','oRate','oVol'].forEach(id =>
+    $(id).addEventListener('input', () => { readOpts(); if(id === 'oPhrase') resetTracking(); }));
+  if(isIOS) $('volRow').hidden = true; // sur iPhone / iPad le volume se règle avec les boutons de l'appareil
+
+  /* ---------- Panneau réglages ---------- */
+  function setDrawer(open){
+    app.classList.toggle('open', open);
+    $('bSettings').classList.toggle('on', open);
+    if(open && activeIdx >= 0) setTimeout(() => scrollToActive(true), 50);
+  }
+  $('bSettings').onclick = () => setDrawer(!app.classList.contains('open'));
+  $('bClose').onclick = () => setDrawer(false);
+  $('backdrop').onclick = () => setDrawer(false);
+
+  /* ---------- Fichiers ---------- */
+  const SUB_RE = /\.(srt|vtt)$/i, VID_RE = /\.(mp4|m4v|mov|webm|mkv)$/i;
+  const isSub = f => SUB_RE.test(f.name);
+  const isVid = f => VID_RE.test(f.name) || (f.type || '').startsWith('video/');
+  const stem = n => n.replace(/\.[^.]+$/, '');
+  const norm = s => s.normalize('NFC').toLowerCase().trim();
+  const natSort = (a, b) => a.name.localeCompare(b.name, 'fr', {numeric: true, sensitivity: 'base'});
+
+  // Trouve le sous-titre qui correspond à la vidéo : « nom.fr.srt » en priorité
+  // Le nom du .srt doit commencer par le nom de la vidéo ; les caractères en plus à la fin
+  // (« .fr », « _VF », « (A2) »…) sont ignorés.
+  function findSubsFor(videoName){
+    const b = norm(stem(videoName));
+    const others = lib.videos.map(v => norm(stem(v.name))).filter(o => o.length > b.length && o.startsWith(b));
+    const cands = lib.subs
+      .map(f => ({f, s: norm(stem(f.name))}))
+      .filter(x => x.s.startsWith(b))
+      // « Leçon 1 » ne doit pas prendre le .srt de « Leçon 10 » si cette vidéo est aussi ouverte
+      .filter(x => !others.some(o => x.s.startsWith(o)));
+    if(!cands.length) return null;
+    const rank = x => {
+      const extra = x.s.slice(b.length);
+      if(/^[ ._-]*fr$/.test(extra)) return 0;   // nom.fr.srt
+      if(extra === '') return 1;                 // nom.srt
+      if(/(^|[^a-z])fr([^a-z]|$)/.test(extra)) return 2; // contient « fr »
+      return 3;                                  // autre suffixe
+    };
+    cands.sort((x, y) => rank(x) - rank(y) || x.s.length - y.s.length);
+    return cands[0].f;
+  }
+  function addSubs(list){
+    for(const f of list){
+      const i = lib.subs.findIndex(s => s.name === f.name);
+      if(i >= 0) lib.subs[i] = f; else lib.subs.push(f);
+    }
+  }
+  let pendingSub = null; // sous-titre choisi avant la vidéo
+  function handleFiles(fileList){
+    const files = Array.from(fileList || []);
+    const vids = files.filter(f => !isSub(f) && isVid(f)).sort(natSort);
+    const subs = files.filter(isSub);
+    addSubs(subs);
+    if(vids.length){
+      if(subs.length) pendingSub = subs[0];
+      lib.videos = vids;
+      buildPlaylist();
+      openVideo(0);
+    } else if(subs.length){
+      const v = lib.videos[lib.current];
+      const match = v && findSubsFor(v.name);
+      if(!v) pendingSub = subs[0];
+      loadSubs(match && subs.includes(match) ? match : subs[0]);
+    } else if(files.length){
+      setStatus(null, 'Aucune vidéo ni sous-titre reconnu dans la sélection.');
+    }
+  }
+  function buildPlaylist(){
+    const sel = $('playlist');
+    sel.innerHTML = '';
+    lib.videos.forEach((f, i) => { const o = document.createElement('option'); o.value = i; o.textContent = stem(f.name); sel.appendChild(o); });
+    sel.hidden = lib.videos.length < 2;
+  }
+  $('playlist').addEventListener('change', e => openVideo(+e.target.value));
+
+  function openVideo(i){
+    const f = lib.videos[i]; if(!f) return;
+    lib.current = i; $('playlist').value = i; $('library').value = '';
+    if(video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
+    video.src = URL.createObjectURL(f);
+    stage.classList.remove('empty');
+    clearAB(); resetTracking(); cancelWait(true);
+    curTitle = stem(f.name);
+    const sub = findSubsFor(f.name) || pendingSub;
+    pendingSub = null;
+    if(sub) loadSubs(sub);
+    else { cues = []; buildTranscript(); drawCues(); lastText = null; setStatus(curTitle); }
+  }
+  function decodeText(buf){
+    try { return new TextDecoder('utf-8', {fatal:true}).decode(buf); }
+    catch(e){ return new TextDecoder('windows-1252').decode(buf); }
+  }
+  async function loadSubs(file){
+    cues = parseSubs(decodeText(await file.arrayBuffer()));
+    buildTranscript(); drawCues(); resetTracking(); lastText = null;
+    setStatus(curTitle, cues.length ? null : 'Aucun sous-titre lisible dans ' + file.name);
+  }
+  let curTitle = '';
+  function setStatus(title, warn){
+    const s = $('status'); s.innerHTML = '';
+    const add = (txt, cls) => { const e = document.createElement('span'); e.textContent = txt; e.title = txt; if(cls) e.className = cls; s.appendChild(e); };
+    // le titre n'est pas répété quand une liste (bibliothèque ou plusieurs vidéos) l'affiche déjà
+    if(title && lib.videos.length < 2 && $('library').value === '') add(title, 'title');
+    if(warn) add('⚠️ ' + warn, 'warn');
+    // tant qu'une vidéo est ouverte sans sous-titres, le bouton « Sous-titres » clignote
+    $('lblSrt').classList.toggle('blink', !!video.getAttribute('src') && !cues.length && !loadingSubs);
+  }
+
+  /* ---------- Bibliothèque publiée avec le site (media-library/catalog.json) ----------
+     Remplie par ajouter-enlever-videos\gerer-bibliotheque.cmd : chaque vidéo y est rangée avec son .srt. */
+  let catalog = [], loadingSubs = false;
+  const LAST = 'lecteur-srt-dernier';
+  const libUrl = p => 'media-library/' + p.split('/').map(encodeURIComponent).join('/');
+  function loadScript(src){
+    return new Promise(res => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = () => res(true); s.onerror = () => res(false);
+      document.head.appendChild(s);
+    });
+  }
+  async function loadCatalog(){
+    // catalog.js (avec le texte des .srt) fonctionne aussi quand la page est ouverte par double-clic ;
+    // catalog.json sert de secours sur un serveur.
+    let data = null;
+    if(await loadScript('media-library/catalog.js?v=' + Date.now()) && window.MEDIA_LIBRARY) data = window.MEDIA_LIBRARY;
+    else {
+      try { const r = await fetch('media-library/catalog.json', {cache: 'no-cache'}); if(r.ok) data = await r.json(); } catch(e){}
+    }
+    if(!data) return;
+    catalog = (data.pieces || []).filter(p => p && p.video && p.title)
+      .sort((a, b) => a.title.localeCompare(b.title, 'fr', {numeric: true, sensitivity: 'base'}));
+    if(!catalog.length) return;
+    const sel = $('library');
+    catalog.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = p.title; sel.appendChild(o); });
+    sel.hidden = false;
+    $('emptyMsg').innerHTML = 'Choisissez une vidéo dans la liste <b>📚 Bibliothèque</b>,<br>' +
+      'ou ouvrez vos propres fichiers avec <b>Vidéo</b> et <b>Sous-titres</b>.';
+    // au démarrage : la dernière vidéo regardée, sinon la première de la liste
+    let last = null; try { last = localStorage.getItem(LAST); } catch(e){}
+    const i = catalog.findIndex(p => p.id === last);
+    if(!video.getAttribute('src')) openPiece(i >= 0 ? i : 0);
+  }
+  async function openPiece(i){
+    const p = catalog[i]; if(!p) return;
+    $('library').value = i;
+    lib.videos = []; lib.current = -1; pendingSub = null; buildPlaylist();
+    if(video.src.startsWith('blob:')) URL.revokeObjectURL(video.src);
+    video.src = libUrl(p.video);
+    stage.classList.remove('empty');
+    clearAB(); resetTracking(); cancelWait(true);
+    cues = []; buildTranscript(); drawCues(); lastText = null;
+    curTitle = p.title;
+    try { localStorage.setItem(LAST, p.id); } catch(e){}
+    if(!p.subtitles && !p.subtitlesText){ setStatus(curTitle); return; }
+    loadingSubs = true; setStatus(curTitle);
+    try {
+      let text = p.subtitlesText;
+      if(text == null){
+        const r = await fetch(libUrl(p.subtitles));
+        if(!r.ok) throw new Error(r.status);
+        text = decodeText(await r.arrayBuffer());
+      }
+      if($('library').value !== String(i)) return; // une autre vidéo a été choisie entre-temps
+      cues = parseSubs(text);
+      buildTranscript(); drawCues(); resetTracking(); lastText = null;
+      loadingSubs = false;
+      setStatus(curTitle, cues.length ? null : 'Aucun sous-titre lisible.');
+    } catch(e){
+      loadingSubs = false;
+      setStatus(curTitle, 'Impossible de charger les sous-titres de cette vidéo.');
+    }
+  }
+  $('library').addEventListener('change', e => { if(e.target.value !== '') openPiece(+e.target.value); });
+
+  // Deux boutons séparés : Vidéo et Sous-titres
+  if(!isIOS) $('fSrt').accept = '.srt,.vtt'; // sur iPhone / iPad, un filtre .srt peut griser les fichiers
+  ['fVideo', 'fSrt'].forEach(id => $(id).addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; }));
+
+  // Glisser-déposer (ordinateur) : vidéo et/ou .srt
+  ['dragenter','dragover'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); stage.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); if(ev === 'drop' || !e.relatedTarget) stage.classList.remove('drag'); }));
+  document.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+
+  /* ---------- Lecture du SRT ---------- */
+  function parseTime(s){
+    const m = s.match(/(?:(\d+):)?(\d{1,2}):(\d{1,2})[,.](\d{1,3})/);
+    if(!m) return NaN;
+    return (+(m[1]||0))*3600 + (+m[2])*60 + (+m[3]) + (+m[4].padEnd(3,'0'))/1000;
+  }
+  function parseSubs(txt){
+    txt = txt.replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n').map(l => l.trimEnd()).join('\n');
+    const out = [];
+    for(const block of txt.split(/\n{2,}/)){
+      const lines = block.split('\n');
+      const i = lines.findIndex(l => l.includes('-->'));
+      if(i < 0) continue;
+      const [a, b] = lines[i].split('-->');
+      const start = parseTime(a), end = parseTime(b || '');
+      if(isNaN(start) || isNaN(end)) continue;
+      const text = lines.slice(i+1).join('\n')
+        .replace(/\{\\[^}]*\}/g, '').replace(/<\/?[a-z][^>]*>/gi, '').trim();
+      if(!text) continue;
+      out.push({start, end: Math.max(end, start + 0.1), text});
+    }
+    out.sort((x, y) => x.start - y.start);
+    return out;
+  }
+  function lastStartBefore(t){
+    let lo = 0, hi = cues.length - 1, ans = -1;
+    while(lo <= hi){ const m = (lo + hi) >> 1; if(cues[m].start <= t + 0.001){ ans = m; lo = m + 1; } else hi = m - 1; }
+    return ans;
+  }
+  function cueAt(t){ const i = lastStartBefore(t); return (i >= 0 && t < cues[i].end) ? i : -1; }
+
+  /* ---------- Lecture / attente ---------- */
+  const dur = () => isFinite(video.duration) ? video.duration : 0;
+  const validAB = () => st.A != null && st.B != null && st.B > st.A;
+  function resume(){ const p = video.play(); if(p) p.catch(() => {}); }
+  function resetTracking(){ st.tracked = -1; st.done = -1; st.playCount = 0; }
+  function userSeek(t){
+    cancelWait(true);
+    video.currentTime = Math.max(0, Math.min(t, dur() || t));
+    resetTracking();
+  }
+  function startWait(sec, label, fn, cueIdx = -1){
+    video.pause();
+    st.waiting = true; st.waitStart = performance.now(); st.waitMs = sec * 1000;
+    st.pending = fn; st.waitCue = cueIdx;
+    $('cdLabel').textContent = label;
+    $('countdown').classList.add('on');
+    clearTimeout(st.timer);
+    st.timer = setTimeout(runPending, st.waitMs);
+  }
+  function runPending(){ const fn = st.pending; cancelWait(true); if(fn) fn(); }
+  // full=true : on oublie l'action en attente ; false : ▶ la reprendra
+  function cancelWait(full){
+    clearTimeout(st.timer); st.waiting = false;
+    $('countdown').classList.remove('on');
+    if(full){ st.pending = null; st.waitCue = -1; }
+  }
+  function play(){
+    if(st.pending){ runPending(); return; }
+    const t = video.currentTime;
+    if(st.loop && validAB() && (t < st.A - 0.05 || t >= st.B - 0.05)) userSeek(st.A);
+    else if(video.ended) userSeek(0);
+    resume();
+  }
+  function pause(){ if(st.waiting){ cancelWait(false); return; } video.pause(); }
+  const isRunning = () => st.waiting || !video.paused;
+  function togglePlay(){ if(!video.src) return; isRunning() ? pause() : play(); }
+
+  function loopBack(){
+    const go = () => { video.currentTime = st.A; resetTracking(); resume(); };
+    if(st.abPause) startWait(st.delay, 'Fin de la séquence — reprise au début…', go);
+    else go();
+  }
+  function check(){
+    if(video.paused || st.waiting || !video.src) return;
+    const t = video.currentTime;
+    if(st.loop && validAB() && (t >= st.B - 0.03 || video.ended)){ loopBack(); return; }
+    if(st.phrase && cues.length){
+      if(st.tracked >= 0){
+        const c = cues[st.tracked];
+        if(t >= c.end - 0.03){
+          const ci = st.tracked;
+          st.playCount++;
+          const again = st.playCount <= st.reps;
+          const label = again
+            ? (st.reps === Infinity ? 'À vous ! La phrase va être rejouée…' : `À vous ! Répétition ${st.playCount}/${st.reps}…`)
+            : 'À vous ! Suite dans un instant…';
+          startWait(st.delay, label, () => {
+            if(again){ video.currentTime = cues[ci].start; st.tracked = ci; st.done = -1; }
+            else { st.tracked = -1; st.done = ci; st.playCount = 0; }
+            resume();
+          }, ci);
+          return;
+        }
+      }
+      const i = cueAt(t);
+      if(i >= 0 && i !== st.tracked && i !== st.done){ st.tracked = i; st.playCount = 0; }
+    }
+  }
+  video.addEventListener('timeupdate', check);
+  video.addEventListener('ended', () => { if(st.loop && validAB()) loopBack(); });
+
+  /* ---------- Navigation phrases ---------- */
+  function gotoCue(i, autoplay = true){
+    if(i < 0 || i >= cues.length) return;
+    userSeek(cues[i].start + 0.001);
+    if(autoplay) resume();
+  }
+  function prevCue(){
+    if(!cues.length) return userSeek(video.currentTime - 5);
+    const t = video.currentTime, i = lastStartBefore(t);
+    if(i >= 0 && t - cues[i].start > 0.8) gotoCue(i, isRunning());
+    else gotoCue(Math.max(0, i - 1), isRunning());
+  }
+  function nextCue(){
+    if(!cues.length) return userSeek(video.currentTime + 5);
+    gotoCue(Math.min(cues.length - 1, lastStartBefore(video.currentTime) + 1), isRunning());
+  }
+  function replayCue(){
+    if(!cues.length) return;
+    const t = st.waitCue >= 0 ? cues[st.waitCue].start : video.currentTime;
+    gotoCue(Math.max(0, lastStartBefore(t)), true);
+  }
+  function goStart(){
+    const r = isRunning();
+    userSeek(st.loop && validAB() ? st.A : 0);
+    if(r) resume();
+  }
+
+  /* ---------- Marqueurs A / B ---------- */
+  function snapA(t){ if(!st.snap || !cues.length) return t; const i = cueAt(t); return i >= 0 ? cues[i].start : t; }
+  function snapB(t){
+    if(!st.snap || !cues.length) return t;
+    const i = cueAt(t); if(i >= 0) return cues[i].end;
+    const j = lastStartBefore(t); return (j >= 0 && t - cues[j].end < 1.5) ? cues[j].end : t;
+  }
+  function setMarker(which, t){
+    const d = dur(); if(!d) return;
+    t = Math.max(0, Math.min(d, t));
+    if(which === 'A'){ st.A = t; if(st.B != null && st.B <= st.A + 0.2) st.B = null; }
+    else { st.B = t; if(st.A != null && st.A >= st.B - 0.2) st.A = null; }
+    if(!validAB() && st.loop) setLoop(false);
+    updateAB();
+  }
+  function setLoop(on){
+    if(on && !validAB()){
+      if(!cues.length) return;
+      const i = Math.max(0, lastStartBefore(video.currentTime));
+      st.A = cues[i].start; st.B = cues[i].end; // pas de séquence : la phrase en cours
+    }
+    st.loop = on;
+    if(on){
+      const t = video.currentTime;
+      if(t < st.A - 0.05 || t >= st.B){ const r = isRunning(); userSeek(st.A); if(r) resume(); }
+    }
+    updateAB();
+  }
+  function clearAB(){ st.A = st.B = null; st.loop = false; updateAB(); }
+  function updateAB(){
+    const d = dur();
+    const pos = t => d ? (t / d * 100) + '%' : '0';
+    $('mA').classList.toggle('on', st.A != null); if(st.A != null) $('mA').style.left = pos(st.A);
+    $('mB').classList.toggle('on', st.B != null); if(st.B != null) $('mB').style.left = pos(st.B);
+    const reg = $('region');
+    reg.classList.toggle('on', validAB()); reg.classList.toggle('loop', st.loop);
+    if(validAB()){ reg.style.left = pos(st.A); reg.style.width = ((st.B - st.A) / d * 100) + '%'; }
+    $('bLoop').classList.toggle('on', st.loop);
+    $('abInfo').textContent = (st.A != null || st.B != null)
+      ? `A ${st.A != null ? fmt(st.A) : '—'} → B ${st.B != null ? fmt(st.B) : '—'}${validAB() ? '  (' + (st.B - st.A).toFixed(1).replace('.', ',') + ' s)' : ''}`
+      : '';
+    trItems.forEach((li, i) => li.classList.toggle('inab', validAB() && cues[i].start >= st.A - 0.01 && cues[i].end <= st.B + 0.01));
+  }
+
+  /* ---------- Barre de temps (souris et doigt) ---------- */
+  function timeFromX(x){ const r = track.getBoundingClientRect(); return Math.min(1, Math.max(0, (x - r.left) / r.width)) * dur(); }
+  function snapDrag(t, which){
+    if(!st.snap || !cues.length) return t;
+    const tol = 12 / track.clientWidth * dur();
+    let best = t, bd = tol;
+    for(const c of cues){ const v = which === 'A' ? c.start : c.end; const dd = Math.abs(v - t); if(dd < bd){ bd = dd; best = v; } }
+    return best;
+  }
+  let drag = null, dragWasRunning = false;
+  track.addEventListener('pointerdown', e => {
+    if(!dur()) return;
+    const m = e.target.closest('.marker');
+    drag = m ? m.dataset.m : 'seek';
+    try { track.setPointerCapture(e.pointerId); } catch(_){}
+    if(drag === 'seek'){ dragWasRunning = isRunning(); if(!video.paused) video.pause(); userSeek(timeFromX(e.clientX)); }
+    e.preventDefault();
+  });
+  track.addEventListener('pointermove', e => {
+    const tip = $('tip');
+    if(dur() && (e.pointerType === 'mouse' || drag)){
+      const r = track.getBoundingClientRect();
+      tip.style.display = 'block';
+      tip.style.left = Math.min(r.width, Math.max(0, e.clientX - r.left)) + 'px';
+      tip.textContent = fmt(timeFromX(e.clientX));
+    }
+    if(!drag) return;
+    const t = timeFromX(e.clientX);
+    if(drag === 'seek') userSeek(t);
+    else setMarker(drag, snapDrag(t, drag));
+  });
+  const endDrag = e => {
+    if(drag === 'seek' && dragWasRunning) resume();
+    drag = null;
+    if(!e || e.pointerType !== 'mouse') $('tip').style.display = 'none';
+  };
+  track.addEventListener('pointerup', endDrag);
+  track.addEventListener('pointercancel', endDrag);
+  track.addEventListener('pointerleave', () => { if(!drag) $('tip').style.display = 'none'; });
+
+  function drawCues(){
+    const cv = $('cueCanvas'), dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = Math.max(1, w * dpr); cv.height = Math.max(1, h * dpr);
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    const d = dur(); if(!d || !cues.length) return;
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--cue').trim() || '#5b6372';
+    for(const c of cues){ ctx.fillRect(c.start / d * w, 0, Math.max(1, (c.end - c.start) / d * w - 1), h); }
+  }
+  if('ResizeObserver' in window) new ResizeObserver(drawCues).observe(track);
+  else window.addEventListener('resize', drawCues);
+  video.addEventListener('loadedmetadata', () => { drawCues(); updateAB(); readOpts(); });
+
+  /* ---------- Transcription ---------- */
+  let trItems = [], activeIdx = -1, userScrollAt = 0;
+  const list = $('trList');
+  ['wheel','touchmove'].forEach(ev => list.addEventListener(ev, () => userScrollAt = Date.now(), {passive:true}));
+  function buildTranscript(){
+    list.innerHTML = ''; trItems = []; activeIdx = -1;
+    $('cueCount').textContent = cues.length ? cues.length + ' phrases' : '';
+    if(!cues.length){ list.innerHTML = '<li class="tr-empty">Aucun sous-titre chargé.</li>'; return; }
+    const frag = document.createDocumentFragment();
+    cues.forEach((c, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="t">${fmt(c.start, true)}</span><span class="x"></span>
+        <span class="mk"><button class="ma" title="Début de séquence ici">A</button><button class="mb" title="Fin de séquence ici">B</button></span>`;
+      li.querySelector('.x').textContent = c.text;
+      li.addEventListener('click', e => {
+        if(e.target.closest('.ma')){ setMarker('A', c.start); return; }
+        if(e.target.closest('.mb')){ setMarker('B', c.end); return; }
+        gotoCue(i, true);
+      });
+      frag.appendChild(li); trItems.push(li);
+    });
+    list.appendChild(frag);
+    updateAB();
+  }
+  function scrollToActive(force){
+    const li = trItems[activeIdx];
+    if(!li || !app.classList.contains('open')) return;
+    if(!force && Date.now() - userScrollAt < 3000) return;
+    list.scrollTo({top: li.offsetTop - list.clientHeight / 2 + li.offsetHeight / 2, behavior: force ? 'auto' : 'smooth'});
+  }
+  function setActive(i){
+    if(i === activeIdx) return;
+    if(trItems[activeIdx]) trItems[activeIdx].classList.remove('active');
+    activeIdx = i;
+    if(trItems[i]){ trItems[i].classList.add('active'); scrollToActive(false); }
+  }
+
+  /* ---------- Affichage ---------- */
+  function fmt(t, short){
+    if(!isFinite(t) || t < 0) t = 0;
+    const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = Math.floor(t % 60), ds = Math.floor(t * 10 % 10);
+    const base = (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+    return short ? base : base + '.' + ds;
+  }
+  let lastText = null, lastPlayState = null;
+  function render(){
+    const t = video.currentTime, d = dur();
+    $('tCur').textContent = fmt(t);
+    $('tDur').textContent = fmt(d);
+    const p = d ? t / d * 100 : 0;
+    $('played').style.width = p + '%';
+    $('playhead').style.left = p + '%';
+    if(d && video.buffered.length){
+      let be = 0;
+      for(let i = 0; i < video.buffered.length; i++) if(video.buffered.start(i) <= t + 0.5) be = Math.max(be, video.buffered.end(i));
+      $('buffered').style.width = (be / d * 100) + '%';
+    }
+    let i = cueAt(t);
+    if(i < 0 && st.waitCue >= 0 && (st.waiting || st.pending)) i = st.waitCue;
+    const text = i >= 0 ? cues[i].text : '';
+    if(text !== lastText){
+      lastText = text;
+      const ov = $('overlay'), cur = $('current');
+      ov.innerHTML = '';
+      if(text){ const s = document.createElement('span'); s.textContent = text; ov.appendChild(s); cur.textContent = text; }
+      else cur.innerHTML = `<span class="ph">${cues.length ? '…' : 'Le texte du sous-titre s\'affiche ici.'}</span>`;
+    }
+    setActive(i >= 0 ? i : (cues.length ? lastStartBefore(t) : -1));
+    if(st.waiting) $('cdBar').style.width = (Math.min(1, (performance.now() - st.waitStart) / st.waitMs) * 100) + '%';
+    const running = isRunning();
+    if(running !== lastPlayState){
+      lastPlayState = running;
+      $('playIcon').setAttribute('href', running ? '#i-pause' : '#i-play');
+      $('playLbl').textContent = running ? 'Pause' : 'Lecture';
+    }
+  }
+  function frame(){ check(); render(); requestAnimationFrame(frame); }
+
+  /* ---------- Boutons & clavier ---------- */
+  $('bPlay').onclick = togglePlay;
+  $('bStart').onclick = goStart;
+  $('bPrev').onclick = prevCue;
+  $('bNext').onclick = nextCue;
+  $('bReplay').onclick = replayCue;
+  $('bA').onclick = () => setMarker('A', snapA(video.currentTime));
+  $('bB').onclick = () => setMarker('B', snapB(video.currentTime));
+  $('bLoop').onclick = () => setLoop(!st.loop);
+  $('bClear').onclick = clearAB;
+  video.addEventListener('click', togglePlay);
+
+  document.addEventListener('keydown', e => {
+    const tag = e.target.tagName;
+    if(tag === 'SELECT' || (tag === 'INPUT' && e.target.type !== 'checkbox')) return;
+    if(e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key;
+    let handled = true;
+    if(k === ' ' || k === 'k' || k === 'K') togglePlay();
+    else if(k === 'Home' || k === '0') goStart();
+    else if(k === 'ArrowLeft') prevCue();
+    else if(k === 'ArrowRight') nextCue();
+    else if(k === 'r' || k === 'R') replayCue();
+    else if(k === '[') $('bA').click();
+    else if(k === ']') $('bB').click();
+    else if(k === 'l' || k === 'L') setLoop(!st.loop);
+    else if(k === 'p' || k === 'P'){ $('oPhrase').checked = !$('oPhrase').checked; readOpts(); resetTracking(); }
+    else if(k === 's' || k === 'S') setDrawer(!app.classList.contains('open'));
+    else if(k === 'Escape') setDrawer(false);
+    else if(k >= '1' && k <= '5'){ $('oDelay').value = k; readOpts(); }
+    else handled = false;
+    if(handled) e.preventDefault();
+  });
+  document.addEventListener('keyup', e => { if(e.key === ' ' && e.target.tagName === 'BUTTON') e.preventDefault(); });
+
+  loadPrefs(); readOpts(); updateAB(); loadCatalog();
+  requestAnimationFrame(frame);
+
+  // Fonctionne hors ligne une fois installé (GitHub Pages / écran d'accueil)
+  if('serviceWorker' in navigator && location.protocol === 'https:'){
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
