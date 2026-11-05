@@ -8,8 +8,21 @@ Lecteur pour s'entraîner à répéter des phrases : il lit une vidéo (.mp4) av
 - **Séquence A-B** : marqueurs de début et de fin sur la barre de temps (boutons, glisser, ou A / B dans la transcription), lecture en boucle, avec une pause avant de reboucler si on le souhaite.
 - Lecture / pause, retour au début, phrase précédente / suivante, rejouer la phrase, vitesse de 0,5× à 1,25×.
 - Réglages dans un panneau qui s'ouvre avec le bouton ⚙, avec la phrase en cours (transcription) et ses boutons A / B.
-- Sous-titres affichés tout en bas de l'image ; option **Masquer le texte anglais incrusté** : un bandeau sombre, réglable en hauteur, cache le texte déjà présent dans l'image.
+- Sous-titres affichés tout en bas de l'image (20 % plus petits sur un iPhone standard) ; option **Masquer le texte incrusté dans l'image** : un bandeau sombre, réglable en hauteur, cache le texte déjà présent dans l'image.
 - **Chargement** : bouton **Vidéo** pour la vidéo, bouton **Sous-titres** pour le fichier .srt, dans l'ordre que vous voulez. Sur ordinateur, on peut aussi glisser les deux fichiers sur la page : le .srt dont le nom commence par celui de la vidéo lui est alors associé (les caractères en plus à la fin, comme `.fr`, sont ignorés).
+
+## Profils (4 versions dans le même site)
+
+Au premier lancement, le lecteur demande le profil ; on peut le changer dans ⚙ Réglages.
+
+| Profil | Interface | Vidéos proposées | Lien direct |
+|---|---|---|---|
+| Je parle français — j'apprends l'anglais | français | en anglais | `?p=fr-en` |
+| I speak English — I'm learning French | anglais | en français | `?p=en-fr` |
+| I speak English — I'm learning Spanish | anglais | en espagnol | `?p=en-es` |
+| Hablo español — aprendo francés | espagnol | en français | `?p=es-fr` |
+
+Exemple : `https://<compte>.github.io/lecteur-video-srt/?p=en-fr`. Le réglage **Sous-titres affichés** montre la langue apprise, la langue de la personne, ou les deux (la 2e en jaune, en dessous).
 
 ## Bibliothèque (vidéos publiées avec le site)
 
@@ -18,8 +31,8 @@ Les vidéos rangées dans `media-library/` apparaissent dès le démarrage dans 
 Pour la gérer, lancer `ajouter-enlever-videos\gerer-bibliotheque.cmd` :
 
 1. Ouvrir la bibliothèque dans l'Explorateur
-2. Ajouter plusieurs vidéos : sélectionner les .mp4, le .srt dont le nom commence par celui de la vidéo (même dossier) est ajouté automatiquement
-3. Ajouter une vidéo et choisir son .srt
+2. Ajouter plusieurs vidéos : sélectionner les .mp4 puis indiquer la langue qu'on y entend ; les .srt dont le nom commence par celui de la vidéo (même dossier) sont ajoutés automatiquement, un par langue (`video.fr.srt`, `video.en.srt`, `video.es.srt`… un .srt sans langue dans son nom est dans la langue de la vidéo)
+3. Ajouter une vidéo et choisir ses .srt
 4. Enlever des vidéos
 5. Publier sur GitHub (pour que l'iPad et l'iPhone voient la nouvelle liste)
 
