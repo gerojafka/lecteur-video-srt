@@ -1,11 +1,41 @@
 {
-    "version":  1,
+    "version":  2,
     "pieces":  [
                    {
                        "id":  "0111-our-house-is-flooding-what-should-we-do-slow-english-li",
                        "title":  "0111 - Our House Is Flooding! What Should We Do_! _ Slow English Listening (A2)",
                        "video":  "pieces/0111-our-house-is-flooding-what-should-we-do-slow-english-li/0111 - Our House Is Flooding! What Should We Do_! _ Slow English Listening (A2).mp4",
-                       "subtitles":  "pieces/0111-our-house-is-flooding-what-should-we-do-slow-english-li/0111 - Our House Is Flooding! What Should We Do_! _ Slow English Listening (A2).fr.srt"
+                       "lang":  "en",
+                       "subtitles":  {
+                                         "fr":  "pieces/0111-our-house-is-flooding-what-should-we-do-slow-english-li/0111 - Our House Is Flooding! What Should We Do_! _ Slow English Listening (A2).fr.srt"
+                                     }
+                   },
+                   {
+                       "id":  "03-learn-spanish-with-a-story-slow-spanish-a2-b1-with-subtit",
+                       "title":  "03 - LEARN SPANISH With a STORY 🇪🇸 Slow Spanish A2-B1 (with Subtitles)",
+                       "lang":  "es",
+                       "video":  "pieces/03-learn-spanish-with-a-story-slow-spanish-a2-b1-with-subtit/03 - LEARN SPANISH With a STORY 🇪🇸 Slow Spanish A2-B1 (with Subtitles).mp4",
+                       "subtitles":  {
+                                         "es":  "pieces/03-learn-spanish-with-a-story-slow-spanish-a2-b1-with-subtit/03 - LEARN SPANISH With a STORY 🇪🇸 Slow Spanish A2-B1 (with Subtitles).srt"
+                                     }
+                   },
+                   {
+                       "id":  "04-learn-spanish-with-a-story-i-love-my-job-slow-spanish-a2",
+                       "title":  "04 - LEARN SPANISH With a Story 🇪🇸 I Love My Job _ Slow Spanish A2-B1 (with Subtitles)",
+                       "lang":  "es",
+                       "video":  "pieces/04-learn-spanish-with-a-story-i-love-my-job-slow-spanish-a2/04 - LEARN SPANISH With a Story 🇪🇸 I Love My Job _ Slow Spanish A2-B1 (with Subtitles).mp4",
+                       "subtitles":  {
+                                         "en":  "pieces/04-learn-spanish-with-a-story-i-love-my-job-slow-spanish-a2/04 - LEARN SPANISH With a Story 🇪🇸 I Love My Job _ Slow Spanish A2-B1 (with Subtitles).en-US.srt"
+                                     }
+                   },
+                   {
+                       "id":  "spanish-anna-the-little-bird-a1",
+                       "title":  "Spanish-Anna \u0026 the Little Bird (A1)",
+                       "lang":  "es",
+                       "video":  "pieces/spanish-anna-the-little-bird-a1/Spanish-Anna \u0026 the Little Bird (A1).mp4",
+                       "subtitles":  {
+                                         "en":  "pieces/spanish-anna-the-little-bird-a1/Spanish-Anna \u0026 the Little Bird (A1).en-US.srt"
+                                     }
                    }
                ]
 }
